@@ -21,6 +21,10 @@ CameraWidget::CameraWidget(QWidget *parent)
     cameraLayout->addWidget(cameraLabel);
 
     setLayout(cameraLayout);
+
+    windowWidth = parent->width();
+    windowHeight = parent->height();
+    cameraLabel->setAlignment(Qt::AlignHCenter);
 }
 
 /***
@@ -38,7 +42,9 @@ CameraWidget::~CameraWidget(void)
  */
 void CameraWidget::putFrame(cv::Mat image)
 {
-    cameraLabel->setPixmap(matToPixmap(image));
+    QPixmap convertedImage = matToPixmap(image).scaled(windowWidth, windowHeight, Qt::KeepAspectRatio);
+    cameraLabel->setPixmap(convertedImage);
+
 }
 
 /***

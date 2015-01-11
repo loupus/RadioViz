@@ -27,7 +27,12 @@ MainWindow::MainWindow(QWidget *parent)
         camera[i].set(CV_CAP_PROP_FPS, 30);
     }
 
+    // Set up window. Full screen
+    QDesktopWidget *desktop = QApplication::desktop();
+    setGeometry(desktop->screenGeometry(0));
+
     cameraWidget = new CameraWidget(this);
+    cameraWidget->resize(this->width(), this->height());
 
     QVBoxLayout *layout = new QVBoxLayout;
     QPushButton *button = new QPushButton("Change Camera");
@@ -40,6 +45,8 @@ MainWindow::MainWindow(QWidget *parent)
     setLayout(layout);
     setWindowTitle("Camera");
     setStyleSheet("background-color: black;");
+    setWindowState(Qt::WindowFullScreen);
+
 
 
 

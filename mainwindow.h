@@ -5,6 +5,7 @@
 #include <QVBoxLayout>
 #include <QDebug>
 #include <QPushButton>
+#include <QDesktopWidget>
 #include <opencv2/opencv.hpp>
 #include "camerawidget.h"
 #include "radioviz.h"

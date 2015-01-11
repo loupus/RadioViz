@@ -21,6 +21,8 @@ public:
 private:
     QLabel *cameraLabel;
     QVBoxLayout *cameraLayout;
+    int windowWidth;
+    int windowHeight;
 };
 
 #endif // CAMERAWIDGET_H
