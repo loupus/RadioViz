@@ -6,7 +6,8 @@
  */
 
 #include "mainwindow.h"
-#include "ui_mainwindow.h"
+//#include "ui_mainwindow.h"
+#include <QMainWindow>
 
 /***
  * Main Window Constructor

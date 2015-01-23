@@ -6,6 +6,7 @@
  */
 
 #include <QApplication>
+#include <QtWidgets>
 #include <opencv2/opencv.hpp>
 #include <assert.h>
 
