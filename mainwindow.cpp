@@ -84,7 +84,8 @@ void MainWindow::refreshCameraImage(void)
 {
     cv::Mat image;
     camera[currentCamera] >> image;
-    cameraWidget->putFrame(image);
+    if(!image.empty())
+        cameraWidget->putFrame(image);
 }
 
 /***
