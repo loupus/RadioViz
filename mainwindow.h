@@ -7,7 +7,11 @@
 #include <QDebug>
 #include <QPushButton>
 #include <QDesktopWidget>
+#include <QDir>
+
 #include <opencv2/opencv.hpp>
+#include <portaudiocpp/PortAudioCpp.hxx>
+
 #include "camerawidget.h"
 #include "radioviz.h"
 
@@ -21,16 +25,25 @@ public:
 private:
     CameraWidget *cameraWidget;
     cv::VideoCapture camera[MAX_CAMERAS_AVAILABLE];
+    PaStream *cameraMic[MAX_CAMERAS_AVAILABLE];
     int currentCamera;
     int availableCameras;
+    QLabel *debugLabel;
 
 protected:
     void timerEvent(QTimerEvent*);
-    int countAvailableCameras(void);
-    void refreshCameraImage(void);
+    int CountAvailableCameras(void);
+    void RefreshCameraImage(void);
+    void PrintSupportedStandardSampleRates(const PaStreamParameters *inputParameters, const PaStreamParameters *outputParameters);
+    double GetHighestAudioSampleRate(const PaStreamParameters *inputParameters, const PaStreamParameters *outputParameters);
+    void DebugUpdateAudioLevel(int currentDeviceNum);
+    int GetAudioLevelFromDevice(int devNum);
+    void SelectCameraBasedOnAudio();
 
 public slots:
-    void changeCamera(void);
+    void ChangeCamera(void);
+    void ChangeCamera(int cameraToChange);
+
 
 };
 

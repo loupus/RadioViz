@@ -19,7 +19,7 @@ MainWindow::MainWindow(QWidget *parent)
     currentCamera = 0;
     availableCameras = 0;
 
-    availableCameras = countAvailableCameras();
+    availableCameras = CountAvailableCameras();
     for(int i=0; i < availableCameras; i++) {
         cv::VideoCapture initCamera(i);
         camera[i] = initCamera;
@@ -30,18 +30,22 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Set up window. Full screen
     QDesktopWidget *desktop = QApplication::desktop();
-    setGeometry(desktop->screenGeometry(0));
+    setGeometry(desktop->screenGeometry(1));
 
     cameraWidget = new CameraWidget(this);
     cameraWidget->resize(this->width(), this->height());
 
     QVBoxLayout *layout = new QVBoxLayout;
+    debugLabel = new QLabel;
     QPushButton *button = new QPushButton("Change Camera");
 
     layout->setSpacing(0);
     layout->setMargin(0);
     layout->addWidget(cameraWidget);
-    layout->addWidget(button);
+    layout->addWidget(butto0n);
+    layout->addWidget(debugLabel);
+
+
 
     setLayout(layout);
     setWindowTitle("Camera");
@@ -49,9 +53,57 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowState(Qt::WindowFullScreen);
 
 
+    // Portaudio Test
+    PaError err;
+
+    err = Pa_Initialize();
+    if(err != paNoError)
+        qDebug() << "Error: PortAudio did not initialise";
+
+    int numAudioDevices = Pa_GetDeviceCount();
+    if(numAudioDevices < 0)
+       qDebug() << "Error: PortAudio did not find any audio devices";
+
+    qDebug() << "Number of available devices:"  << numAudioDevices - PORTAUDIO_TO_CAMERA_DEVICE_OFFSET << "\n";
+    debugLabel->setText(QString("Number of available audio devices: %1").arg(numAudioDevices));
+
+    for(int i = 0; i < numAudioDevices; i++)
+    {
+        const PaDeviceInfo *deviceInfo;
+        deviceInfo = Pa_GetDeviceInfo(i);
+        qDebug() << "Device " << i << ": " << deviceInfo->name;
+    }
+
+    PaStreamParameters inputParameters;
+    for(int i = 0 ; i < availableCameras; i++) {
+        inputParameters.device = i + PORTAUDIO_TO_CAMERA_DEVICE_OFFSET;
+        inputParameters.channelCount = NUM_CHANNELS;
+        inputParameters.sampleFormat = PA_SAMPLE_TYPE;
+        inputParameters.suggestedLatency = Pa_GetDeviceInfo(inputParameters.device)->defaultHighInputLatency;
+        inputParameters.hostApiSpecificStreamInfo = NULL;
+
+        err = Pa_OpenStream(
+                    &cameraMic[i],
+                    &inputParameters,
+                    NULL,
+                    GetHighestAudioSampleRate(&inputParameters, NULL),
+                    FRAMES_0PER_BUFFER,
+                    paClipOff,
+                    NULL,
+                    NULL);
+        if(err != paNoError)
+            qDebug() << "Error: Audio Device " << i << "failed to open.";
 
 
-    connect(button, SIGNAL(pressed()), this, SLOT(changeCamera()));
+    }
+
+
+
+
+
+
+
+    connect(button, SIGNAL(pressed()), this, SLOT(ChangeCamera()));
 
     startTimer(50);  // 50 = 30fps
  }
@@ -65,6 +117,169 @@ MainWindow::~MainWindow()
 
 }
 
+double MainWindow::GetHighestAudioSampleRate(
+        const PaStreamParameters *inputParameters,
+        const PaStreamParameters *outputParameters)
+{
+    static double standardSampleRates[] = {
+        8000.0, 9600.0, 11025.0, 12000.0, 16000.0, 22050.0, 24000.0, 32000.0,
+        44100.0, 48000.0, 88200.0, 96000.0, 192000.0, -1 /* negative terminated  list */
+    };
+    int i;
+    double highestSampleRate = 0.0;
+    PaError err;
+
+    for( i=0; standardSampleRates[i] > 0; i++ )
+    {
+        qDebug() << "Device querying rate " << standardSampleRates[i];
+        err = Pa_IsFormatSupported( inputParameters, outputParameters, standardSampleRates[i] );
+        if( err == paFormatIsSupported )
+        {
+            qDebug() << ">> Supported";
+            highestSampleRate = standardSampleRates[i];
+        }
+    }
+    if( !highestSampleRate )
+      qDebug() << ( "No suitable sample rate detected. Something's pear shaped here..." );
+
+    return highestSampleRate;
+}
+
+void MainWindow::PrintSupportedStandardSampleRates(
+        const PaStreamParameters *inputParameters,
+        const PaStreamParameters *outputParameters )
+{
+    static double standardSampleRates[] = {
+        8000.0, 9600.0, 11025.0, 12000.0, 16000.0, 22050.0, 24000.0, 32000.0,
+        44100.0, 48000.0, 88200.0, 96000.0, 192000.0, -1 /* negative terminated  list */
+    };
+    int     i, printCount;
+    PaError err;
+
+    printCount = 0;
+    for( i=0; standardSampleRates[i] > 0; i++ )
+    {
+        err = Pa_IsFormatSupported( inputParameters, outputParameters, standardSampleRates[i] );
+        if( err == paFormatIsSupported )
+        {
+            if( printCount == 0 )
+            {
+                qDebug() << ( "\t%8.2f", standardSampleRates[i] );
+                printCount = 1;
+            }
+            else if( printCount == 4 )
+            {
+                qDebug() << ( ",\n\t%8.2f", standardSampleRates[i] );
+                printCount = 1;
+            }
+            else
+            {
+                qDebug() << ( ", %8.2f", standardSampleRates[i] );
+                ++printCount;
+         }
+        }
+    }
+    if( !printCount )
+      qDebug() << ( "None\n" );
+}
+
+int MainWindow::GetAudioLevelFromDevice(int mic)
+{
+    PaError err;
+    QString *debugString = new QString();
+    float tempBuffer[FRAMES_PER_BUFFER];
+    int volume;
+
+
+
+        Pa_StartStream(cameraMic[mic]);
+
+        err = Pa_ReadStream(cameraMic[mic], tempBuffer, FRAMES_PER_BUFFER);
+        if(err == paNoError) {
+            // Get a dB
+
+            float sum = 0;
+            for (int i = 0; i < FRAMES_PER_BUFFER; i++) {
+                sum += pow(tempBuffer[i], 2);
+            }
+            volume = 20 * log10(sqrt(sum / FRAMES_PER_BUFFER));
+            debugString->append(QString("%1").arg(volume));
+            if(mic == currentCamera)
+                debugString->append(QString("*"));
+
+        } else
+            qDebug() << "Error: " << Pa_GetErrorText(err);
+
+        Pa_StopStream(cameraMic[mic]);
+        debugString->append(QString(" "));
+
+    //qDebug(debugString->toLatin1());
+    debugLabel->setText(*debugString);
+
+    return volume;
+}
+
+void MainWindow::SelectCameraBasedOnAudio()
+{
+    int levels[availableCameras];
+    QString *debugString = new QString();
+
+    for(int i = 0; i < availableCameras; i++) {
+        levels[i] = GetAudioLevelFromDevice(i);
+        debugString->append(QString("%1").arg(levels[i]));
+        if(i == currentCamera)
+            debugString->append(QString("*"));
+        debugString->append(QString(" "));
+
+    }
+    debugLabel->setText(*debugString);
+
+    // Logic
+    for(int i = 0; i < availableCameras; i++) {
+        if(i != currentCamera) {
+            if( (levels[i] > CAMERA_AUDIO_THRESHOLD) && (levels[i] > (levels[currentCamera])) ) {
+                qDebug() << "Changing to camera " << i;
+                ChangeCamera(i);
+            }
+        }
+    }
+}
+
+void MainWindow::DebugUpdateAudioLevel(int currentDeviceNum)
+{
+    PaError err;
+    QString *debugString = new QString();
+    float tempBuffer[FRAMES_PER_BUFFER];
+    int volume;
+
+    for(int mic = 0; mic < availableCameras; mic++) {
+
+
+        Pa_StartStream(cameraMic[mic]);
+
+        err = Pa_ReadStream(cameraMic[mic], tempBuffer, FRAMES_PER_BUFFER);
+        if(err == paNoError) {
+            // Get a dB
+
+            float sum = 0;
+            for (int i = 0; i < FRAMES_PER_BUFFER; i++) {
+                sum += pow(tempBuffer[i], 2);
+            }
+            volume = 20 * log10(sqrt(sum / FRAMES_PER_BUFFER));
+            debugString->append(QString("%1").arg(volume));
+            if(mic == currentDeviceNum)
+                debugString->append(QString("*"));
+
+        } else
+            qDebug() << "Error: " << Pa_GetErrorText(err);
+
+        Pa_StopStream(cameraMic[mic]);
+        debugString->append(QString(" "));
+    }
+
+    //qDebug(debugString->toLatin1());
+    debugLabel->setText(*debugString);
+}
 /***
  * Timer Event Handler
  * Author: Matthew Ribbins
@@ -72,7 +287,10 @@ MainWindow::~MainWindow()
  */
 void MainWindow::timerEvent(QTimerEvent*)
 {
-    refreshCameraImage();
+    //DebugUpdateAudioLevel(currentCamera);
+    SelectCameraBasedOnAudio();
+    RefreshCameraImage();
+
 }
 
 /***
@@ -80,7 +298,7 @@ void MainWindow::timerEvent(QTimerEvent*)
  * Author: Matthew Ribbins
  * Description: Acquire the image from the current camera using OpenCV. We then display the image using CameraWidget
  */
-void MainWindow::refreshCameraImage(void)
+void MainWindow::RefreshCameraImage(void)
 {
     cv::Mat image;
     camera[currentCamera] >> image;
@@ -89,37 +307,52 @@ void MainWindow::refreshCameraImage(void)
 }
 
 /***
- * Refresh Camera Image
+ * Count Number of OpenCV Cameras
  * Author: Matthew Ribbins
  * Description: Count the number of available cameras attached. OpenCV does not do this natively, so we will poll all
  *              the cameras available until we either hit MAX_CAMERAS_AVAILABLE or hit a camera that doesn't exist.
  *
  * Return: (int) Number of cameras available
  */
-int MainWindow::countAvailableCameras(void)
-{
-    cv::VideoCapture tempCamera;
 
+int MainWindow::CountAvailableCameras(void) {
+    int fileCount = 0;
+    QDir dir(QString("/sys/class/video4linux/"));
+    fileCount = dir.count() - 2;
+    qDebug() << "OpenCV detects >=" << fileCount << " cameras.";
+
+    return fileCount;
+}
+
+#if 0
+int MainWindow::countAvailableCameras(void) {
+    cv::VideoCapture tempCamera;
+    bool isOpen = false;
     for (int i = 0; i < MAX_CAMERAS_AVAILABLE; i++) {
         // Attempt to open up camera, get the result
-        cv::VideoCapture tempCamera(i);
-        bool res = (tempCamera.isOpened());
+        tempCamera.open(i);
+        isOpen = (tempCamera.isOpened());
         tempCamera.release();
 
         // If camera does not exist, return number of cameras detected
-        if (!res)
+        if (!isOpen) {
+            qDebug() << "OpenCV detects " << i << " cameras.";
             return i;
+        }
+        isOpen = false;
     }
     // There are >=MAX_CAMERAS_AVAILABLE
+    qDebug() << "OpenCV detects >=" << MAX_CAMERAS_AVAILABLE << " cameras.";
     return MAX_CAMERAS_AVAILABLE;
 }
+#endif
 
 /***
  * Change Camera Feed
  * Author: Matthew Ribbins
  * Description: Switch camera feed
  */
-void MainWindow::changeCamera(void)
+void MainWindow::ChangeCamera(void)
 {
     // Turn off the current camera to save USB bandwidth
     camera[currentCamera].release();
@@ -134,5 +367,24 @@ void MainWindow::changeCamera(void)
     camera[currentCamera].set(CV_CAP_PROP_FPS, 30);
 
     // Refresh image on screen
-    MainWindow::refreshCameraImage();
+    MainWindow::RefreshCameraImage();
 }
+
+void MainWindow::ChangeCamera(int cameraToChange)
+{
+    // Turn off the current camera to save USB bandwidth
+    camera[currentCamera].release();
+
+    // If no camera number provided, switch to the next available camera
+    currentCamera = cameraToChange;
+
+    // Open the new camera
+    camera[currentCamera].open(currentCamera);
+    camera[currentCamera].set(CV_CAP_PROP_FRAME_WIDTH, 1280);
+    camera[currentCamera].set(CV_CAP_PROP_FRAME_HEIGHT, 720);
+    camera[currentCamera].set(CV_CAP_PROP_FPS, 30);
+
+    // Refresh image on screen
+    MainWindow::RefreshCameraImage();
+}
+

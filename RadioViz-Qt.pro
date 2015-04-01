@@ -24,4 +24,4 @@ FORMS    +=
 
 macx: INCLUDEPATH += /usr/local/include/
 
-unix: LIBS += -L/usr/local/lib -lavutil -lavcodec -lavformat -lavdevice  -lswscale -lopencv_core -lopencv_imgproc -lopencv_highgui
+unix: LIBS += -L/usr/local/lib -lavutil -lavcodec -lavformat -lavdevice  -lswscale -lopencv_core -lopencv_imgproc -lopencv_highgui -lrt -lasound -ljack -lpthread -lportaudio
