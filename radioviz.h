@@ -26,6 +26,11 @@
 #define NUM_SECONDS     (15)
 #define DITHER_FLAG     (0)
 
+// OpenCV Defaults
+#define CAMERA_DEFAULT_RES_WIDTH 1280
+#define CAMERA_DEFAULT_RES_HEIGHT 720
+#define CAMERA_DEFAULT_FPS 15
+
 
 #define CAMERA_AUDIO_THRESHOLD (-20)
 

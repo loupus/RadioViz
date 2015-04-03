@@ -14,11 +14,13 @@ TEMPLATE = app
 
 SOURCES += main.cpp\
         mainwindow.cpp \
-    camerawidget.cpp
+    camerawidget.cpp \
+    camera.cpp
 
 HEADERS  += mainwindow.h \
     radioviz.h \
-    camerawidget.h
+    camerawidget.h \
+    camera.h
 
 FORMS    +=
 

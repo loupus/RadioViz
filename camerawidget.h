@@ -17,6 +17,7 @@ public:
     ~CameraWidget(void);
     QPixmap matToPixmap(cv::Mat);
     void putFrame(cv::Mat);
+    void putFrame(QPixmap image);
 
 private:
     QLabel *cameraLabel;

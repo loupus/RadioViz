@@ -47,6 +47,12 @@ void CameraWidget::putFrame(cv::Mat image)
 
 }
 
+void CameraWidget::putFrame(QPixmap image)
+{
+    image = image.scaled(windowWidth, windowHeight, Qt::KeepAspectRatio);
+    cameraLabel->setPixmap(image);
+}
+
 /***
  * Convert Mat to QPixmap
  * Author: Matthew Ribbins

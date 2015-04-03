@@ -13,6 +13,7 @@
 #include <portaudiocpp/PortAudioCpp.hxx>
 
 #include "camerawidget.h"
+#include "camera.h"
 #include "radioviz.h"
 
 class MainWindow : public QWidget
@@ -24,8 +25,7 @@ public:
 
 private:
     CameraWidget *cameraWidget;
-    cv::VideoCapture camera[MAX_CAMERAS_AVAILABLE];
-    PaStream *cameraMic[MAX_CAMERAS_AVAILABLE];
+    Camera *camera[MAX_CAMERAS_AVAILABLE];
     int currentCamera;
     int availableCameras;
     QLabel *debugLabel;
