@@ -18,12 +18,15 @@ MainWindow::MainWindow(QWidget *parent)
     : QWidget(parent)
 {
     PaError err;
-    currentCamera = 0;
-    availableCameras = 0;
+    //int result;
+    QSettings settings("settings.ini", QSettings::IniFormat, parent);
 
     // Set up window. Full screen
     QDesktopWidget *desktop = QApplication::desktop();
-    setGeometry(desktop->screenGeometry(1));
+    setGeometry(desktop->screenGeometry(0));
+
+    currentCamera = 0;
+    availableCameras = 0;
 
     cameraWidget = new CameraWidget(this);
     cameraWidget->resize(this->width(), this->height());
@@ -46,7 +49,16 @@ MainWindow::MainWindow(QWidget *parent)
     // Portaudio Test
 
 
-    availableCameras = CountAvailableCameras();
+    // Get available camera devices by using FFMpeg
+    av_register_all();
+    avdevice_register_all();
+    avcodec_register_all();
+
+
+
+    AVDeviceInfoList* deviceList;
+    GetAvailableCamerasList(&deviceList);
+    availableCameras = deviceList->nb_devices;
 
     err = Pa_Initialize();
     if(err != paNoError)
@@ -67,18 +79,19 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     // Initialise Cameras
-
-
     for(int i=0; i < availableCameras; i++) {
         camera[i] = new Camera(i,i);
     }
 
-
-
+    // Settings
+    for(int i=0; i < availableCameras; i++) {
+        settings.setValue(QString("Devices/").append(deviceList->devices[i]->device_name).append("/name"),
+                          QString(deviceList->devices[i]->device_description));
+    }
 
     connect(button, SIGNAL(pressed()), this, SLOT(ChangeCamera()));
 
-    startTimer(100);  // 50 = 30fps
+    startTimer(50);  // 50 = 30fps
  }
 
 /***
@@ -181,6 +194,36 @@ void MainWindow::RefreshCameraImage(void)
 }
 
 /***
+ * Count Number of camera devicess
+ * Author: Matthew Ribbins
+ * Description: Count the number of available cameras attached.
+ *
+ * Return: (int) Number of cameras available
+ */
+
+int MainWindow::CountAvailableCameras(void)
+{
+    AVDeviceInfoList *deviceList;
+    AVInputFormat *iformat = av_find_input_format("video4linux2");
+    avdevice_list_input_sources(iformat, NULL, NULL, &deviceList);
+    return deviceList->nb_devices;
+}
+
+/***
+ * Get list of camera devices
+ * Author: Matthew Ribbins
+ * Description: Get list of camera devices.
+ *
+ * Return: (AVDeviceList) Number of cameras available
+ */
+
+int MainWindow::GetAvailableCamerasList(AVDeviceInfoList** deviceList)
+{
+    AVInputFormat *iformat = av_find_input_format("video4linux2");
+    return avdevice_list_input_sources(iformat, NULL, NULL, deviceList);
+}
+
+/***
  * Count Number of OpenCV Cameras
  * Author: Matthew Ribbins
  * Description: Count the number of available cameras attached. OpenCV does not do this natively, so we will poll all
@@ -188,15 +231,18 @@ void MainWindow::RefreshCameraImage(void)
  *
  * Return: (int) Number of cameras available
  */
+#if 0
 
-int MainWindow::CountAvailableCameras(void) {
-    int fileCount = 0;
+int MainWindow::CountAvailableCamerasOpenCV(void)
+{
+    int fileCount = 0
     QDir dir(QString("/sys/class/video4linux/"));
     fileCount = dir.count() - 2;
     qDebug() << "OpenCV detects >=" << fileCount << " cameras.";
-
     return fileCount;
 }
+#endif
+
 
 #if 0
 int MainWindow::countAvailableCameras(void) {

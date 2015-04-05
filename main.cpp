@@ -17,6 +17,10 @@ int main(int argc, char **argv) {
 
     QApplication app(argc, argv);
 
+    QCoreApplication::setOrganizationName("MPRS");
+    QCoreApplication::setOrganizationDomain("mattyribbo.co.uk");
+    QCoreApplication::setApplicationName("RadioViz");
+
     // Open up the main window
     MainWindow *window = new MainWindow();
     window->show();

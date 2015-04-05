@@ -8,9 +8,14 @@
 #include <QPushButton>
 #include <QDesktopWidget>
 #include <QDir>
+#include <QSettings>
 
 #include <opencv2/opencv.hpp>
 #include <portaudiocpp/PortAudioCpp.hxx>
+
+extern "C" {
+#include <libavdevice/avdevice.h>
+}
 
 #include "camerawidget.h"
 #include "camera.h"
@@ -33,6 +38,7 @@ private:
 protected:
     void timerEvent(QTimerEvent*);
     int CountAvailableCameras(void);
+    int GetAvailableCamerasList(AVDeviceInfoList **deviceList);
     void RefreshCameraImage(void);
     void PrintSupportedStandardSampleRates(const PaStreamParameters *inputParameters, const PaStreamParameters *outputParameters);
     double GetHighestAudioSampleRate(const PaStreamParameters *inputParameters, const PaStreamParameters *outputParameters);
