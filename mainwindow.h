@@ -9,6 +9,8 @@
 #include <QDesktopWidget>
 #include <QDir>
 #include <QSettings>
+#include <QThread>
+#include <QKeyEvent>
 
 #include <opencv2/opencv.hpp>
 #include <portaudiocpp/PortAudioCpp.hxx>
@@ -33,18 +35,23 @@ private:
     Camera *camera[MAX_CAMERAS_AVAILABLE];
     int currentCamera;
     int availableCameras;
+    int timerCount;
+    QThread audioThread;
     QLabel *debugLabel;
+    int mode;
 
 protected:
-    void timerEvent(QTimerEvent*);
+    void timerEvent(QTimerEvent *);
+    void keyPressEvent(QKeyEvent *);
     int CountAvailableCameras(void);
     int GetAvailableCamerasList(AVDeviceInfoList **deviceList);
     void RefreshCameraImage(void);
     void PrintSupportedStandardSampleRates(const PaStreamParameters *inputParameters, const PaStreamParameters *outputParameters);
     double GetHighestAudioSampleRate(const PaStreamParameters *inputParameters, const PaStreamParameters *outputParameters);
-    void DebugUpdateAudioLevel(int currentDeviceNum);
     int GetAudioLevelFromDevice(int devNum);
     void SelectCameraBasedOnAudio();
+    void SelectCameraBasedOnVideo();
+    void SelectCameraBasedOnInput(int input);
 
 public slots:
     void ChangeCamera(void);

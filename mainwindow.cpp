@@ -27,6 +27,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     currentCamera = 0;
     availableCameras = 0;
+    timerCount = 0;
+    mode = 0;
 
     cameraWidget = new CameraWidget(this);
     cameraWidget->resize(this->width(), this->height());
@@ -46,20 +48,16 @@ MainWindow::MainWindow(QWidget *parent)
     setStyleSheet("background-color: black;");
     setWindowState(Qt::WindowFullScreen);
 
-    // Portaudio Test
-
-
     // Get available camera devices by using FFMpeg
     av_register_all();
     avdevice_register_all();
     avcodec_register_all();
 
-
-
     AVDeviceInfoList* deviceList;
     GetAvailableCamerasList(&deviceList);
     availableCameras = deviceList->nb_devices;
 
+    // Initialise PortAudio
     err = Pa_Initialize();
     if(err != paNoError)
         qDebug() << "Error: PortAudio did not initialise";
@@ -69,7 +67,6 @@ MainWindow::MainWindow(QWidget *parent)
        qDebug() << "Error: PortAudio did not find any audio devices";
 
     qDebug() << "Number of available devices:"  << numAudioDevices - PORTAUDIO_TO_CAMERA_DEVICE_OFFSET << "\n";
-    debugLabel->setText(QString("Number of available audio devices: %1").arg(numAudioDevices));
 
     for(int i = 0; i < numAudioDevices; i++)
     {
@@ -85,13 +82,40 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Settings
     for(int i=0; i < availableCameras; i++) {
-        settings.setValue(QString("Devices/").append(deviceList->devices[i]->device_name).append("/name"),
-                          QString(deviceList->devices[i]->device_description));
+        QString settingKey(QString("Devices/").append(deviceList->devices[i]->device_description));
+
+        int result = QString::compare(settings.value(QString(settingKey).append("/enabled")).toString(), "true", Qt::CaseInsensitive);
+
+        if(!result) {
+            // We have settings to load
+            qDebug() << "Load " << settingKey;
+            double gain = (settings.value(QString(settingKey).append("/gain"))).toDouble();
+            qDebug() << "Gain " << gain;
+            camera[i]->SetAudioGain(gain);
+
+        } else {
+            // We have a new device to save settings about
+            settings.setValue(QString(settingKey).append("/enabled"), true);
+
+            // Set current settings
+            settings.setValue(QString(settingKey).append("/gain"), camera[i]->GetAudioGain());
+        }
+
+    }
+
+    mode = settings.value(QString("mode")).toInt();
+    if(!mode) {
+        // Initialise Mode
+        settings.setValue(QString("mode"), "1");
+        mode = 1;
     }
 
     connect(button, SIGNAL(pressed()), this, SLOT(ChangeCamera()));
+    for(int i = 0; i < availableCameras; i++) {
+        camera[i]->FlushBuffers();
+    }
 
-    startTimer(50);  // 50 = 30fps
+    startTimer(50); // 50 = 30fps
  }
 
 /***
@@ -100,17 +124,33 @@ MainWindow::MainWindow(QWidget *parent)
  */
 MainWindow::~MainWindow()
 {
-
+    for(int i = 0; i < availableCameras; i++) {
+        delete camera[i];
+    }
 }
 
+void MainWindow::SelectCameraBasedOnInput(int input)
+{
+    if(input > availableCameras) return;
+    ChangeCamera(--input);
+}
 
-
+/***
+ * Select suitable camera based on audio
+ * Author: Matthew Ribbins
+ */
 void MainWindow::SelectCameraBasedOnAudio()
 {
     int levels[availableCameras];
+    bool active[availableCameras];
+    int activeCount = 0;
+    int loudestCamera = 0;
+    float loudestCameraLevel = 0;
     QString *debugString = new QString();
 
+    memset((void *)&active, 0, sizeof(bool)*availableCameras);
 
+    // Get current values
     for(int i = 0; i < availableCameras; i++) {
         levels[i] = camera[i]->GetAudioLevelFromDevice();
         debugString->append(QString("%1").arg(levels[i]));
@@ -118,68 +158,59 @@ void MainWindow::SelectCameraBasedOnAudio()
             debugString->append(QString("*"));
         debugString->append(QString(" "));
 
+        if(levels[i] > loudestCameraLevel) {
+            loudestCamera = i;
+            loudestCameraLevel = levels[i];
+        }
+
+        if(levels[i] > CAMERA_AUDIO_THRESHOLD) {
+            active[i] = true;
+            activeCount++;
+        }
     }
     debugLabel->setText(*debugString);
 
-    // Logic
-    for(int i = 0; i < availableCameras; i++) {
-        if(i != currentCamera) {
-            if( (levels[i] > CAMERA_AUDIO_THRESHOLD) && (levels[i] > (levels[currentCamera])) ) {
-                qDebug() << "Changing to camera " << i;
-                ChangeCamera(i);
-            }
+    if(activeCount) {
+        if(activeCount > 2) {
+            ChangeCamera(loudestCamera);
+        } else {
+            ChangeCamera(loudestCamera);
         }
     }
 }
 
-#if 0
-void MainWindow::DebugUpdateAudioLevel(int currentDeviceNum)
+void MainWindow::SelectCameraBasedOnVideo()
 {
-    PaError err;
-    QString *debugString = new QString();
-    float tempBuffer[FRAMES_PER_BUFFER];
-    int volume;
+    int movement[availableCameras];
+    bool active[availableCameras];
+    int numOfActive = 0;
+    int highestActive = -1;
+    int highestActiveLevel = 0;
 
-    for(int mic = 0; mic < availableCameras; mic++) {
+    memset((void *)&active, 0, sizeof(bool)*availableCameras);
 
-
-        Pa_StartStream(cameraMic[mic]);
-
-        err = Pa_ReadStream(cameraMic[mic], tempBuffer, FRAMES_PER_BUFFER);
-        if(err == paNoError) {
-            // Get a dB
-
-            float sum = 0;
-            for (int i = 0; i < FRAMES_PER_BUFFER; i++) {
-                sum += pow(tempBuffer[i], 2);
+    for(int i = 0; i < availableCameras; i++) {
+        camera[i]->GetVideoFrame();
+        movement[i] = camera[i]->GetMovementDetection();
+        qDebug() << "Camera " << i << ": " << movement[i];
+        if(movement[i] > CAMERA_MOVEMENT_THRESHOLD) {
+            numOfActive++;
+            active[i] = true;
+            if(movement[i] > highestActiveLevel) {
+                highestActive = i;
+                highestActiveLevel = movement[i];
             }
-            volume = 20 * log10(sqrt(sum / FRAMES_PER_BUFFER));
-            debugString->append(QString("%1").arg(volume));
-            if(mic == currentDeviceNum)
-                debugString->append(QString("*"));
-
-        } else
-            qDebug() << "Error: " << Pa_GetErrorText(err);
-
-        Pa_StopStream(cameraMic[mic]);
-        debugString->append(QString(" "));
+        }
     }
-
-    //qDebug(debugString->toLatin1());
-    debugLabel->setText(*debugString);
-}
-#endif
-/***
- * Timer Event Handler
- * Author: Matthew Ribbins
- * Description: Every time the timer handler is called, we need to refresh the current image on screen
- */
-void MainWindow::timerEvent(QTimerEvent*)
-{
-    //DebugUpdateAudioLevel(currentCamera);
-    SelectCameraBasedOnAudio();
-    RefreshCameraImage();
-
+    if(numOfActive) {
+        if(numOfActive > 2) {
+            qDebug() << ">2 cameras with movement above threshold";
+        } else {
+            qDebug() << "Camera " << highestActive << " active";
+            ChangeCamera(highestActive);
+        }
+    }
+    qDebug() << "----";
 }
 
 /***
@@ -214,7 +245,9 @@ int MainWindow::CountAvailableCameras(void)
  * Author: Matthew Ribbins
  * Description: Get list of camera devices.
  *
- * Return: (AVDeviceList) Number of cameras available
+ * Parameters
+ * - AVDeviceInfoList** deviceList (out): List of available camera devices
+ * Return: int: AVError
  */
 
 int MainWindow::GetAvailableCamerasList(AVDeviceInfoList** deviceList)
@@ -306,5 +339,71 @@ void MainWindow::ChangeCamera(int cameraToChange)
 
     // Refresh image on screen
     MainWindow::RefreshCameraImage();
+}
+
+
+/***
+ * Timer Event Handler
+ * Author: Matthew Ribbins
+ * Description: Every time the timer handler is called, we need to refresh the current image on screen
+ */
+void MainWindow::timerEvent(QTimerEvent*)
+{
+    RefreshCameraImage();
+    timerCount++;
+
+    switch(mode) {
+        case MODE_DISABLED:
+            break;
+        case MODE_AUTO_AUDIO:
+            if(10 <= timerCount) {
+                SelectCameraBasedOnAudio();
+                timerCount = 0;
+            }
+            break;
+        case MODE_AUTO_MOVEMENT:
+            if(floor(timerCount/3)) {
+                SelectCameraBasedOnVideo();
+            }
+            break;
+        case MODE_AUTO_MULTI:
+            // Not implemented
+            break;
+        case MODE_MANUAL:
+            break;
+    }
+
+}
+
+/***
+ * Key Press Event Handler
+ * Author: Matthew Ribbins
+ * Description: Look out for numeric keypad presses, or hotkeys to change settings
+ */
+void MainWindow::keyPressEvent(QKeyEvent *event)
+{
+    int key = event->key();
+    switch(key) {
+        case Qt::Key_0:
+            mode = MODE_AUTO_AUDIO; break;
+        case Qt::Key_M:
+            mode = MODE_AUTO_MOVEMENT; break;
+        case Qt::Key_N:
+            mode = MODE_AUTO_AUDIO; break;
+        case Qt::Key_B:
+            mode = MODE_AUTO_MULTI; break;
+        case Qt::Key_1:
+        case Qt::Key_2:
+        case Qt::Key_3:
+        case Qt::Key_4:
+        case Qt::Key_5:
+        case Qt::Key_6:
+        case Qt::Key_7:
+        case Qt::Key_8:
+        case Qt::Key_9:
+            mode = MODE_MANUAL;
+            SelectCameraBasedOnInput(key - 0x30);
+            break;
+    }
 }
 

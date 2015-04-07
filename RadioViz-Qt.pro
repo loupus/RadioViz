@@ -15,7 +15,8 @@ TEMPLATE = app
 SOURCES += main.cpp\
         mainwindow.cpp \
     camerawidget.cpp \
-    camera.cpp
+    camera.cpp \
+    audioworker.cpp
 
 HEADERS  += mainwindow.h \
     radioviz.h \

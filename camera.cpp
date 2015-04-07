@@ -8,18 +8,19 @@
 
 Camera::Camera()
 {
-    DeinitialiseVideo();
 }
 
 Camera::Camera(int cameraId, int audioId)
 {
+    this->audioGain = 0;
+    this->videoMode = CAMERA_MODE_OPENCV;
     InitialiseAudio(audioId);
     InitialiseVideo(cameraId);
 }
 
 Camera::~Camera()
 {
-
+    DeinitialiseVideo();
 }
 
 void Camera::DebugFFmpegError(int errno)
@@ -28,13 +29,24 @@ void Camera::DebugFFmpegError(int errno)
     av_make_error_string(&msg[0], AV_ERROR_MAX_STRING_SIZE, errno);
     qDebug() << "Error:" << msg;
 }
+void Camera::InitialiseVideo(int cameraId)
+{
+    switch(videoMode) {
+        case CAMERA_MODE_FFMPEG:
+            InitialiseVideoFFmpeg(cameraId);
+            break;
+        case CAMERA_MODE_OPENCV:
+            InitialiseVideoOpenCV(cameraId);
+            break;
+    }
+}
 
 /***
- * Initialise Camera (OpenCV)
+ * Initialise Camera (FFmpeg)
  * Author: Matthew Ribbins
  * Description:
  */
-void Camera::InitialiseVideo(int cameraId)
+void Camera::InitialiseVideoFFmpeg(int cameraId)
 {
     char filenameSrc[12];
     int result = 0;
@@ -42,8 +54,6 @@ void Camera::InitialiseVideo(int cameraId)
     uint8_t *buffer;
 
     av_register_all();
-    avdevice_register_all();
-    avcodec_register_all();
 
     video.pFormatCtx = avformat_alloc_context();
     video.pFormatCtx->video_codec_id = AV_CODEC_ID_MJPEG;
@@ -103,24 +113,34 @@ void Camera::InitialiseVideo(int cameraId)
 
 }
 
-#if 0
+/***
+ * Initialise Camera (OpenCV)
+ * Author: Matthew Ribbins
+ * Description:
+ */
+void Camera::InitialiseVideoOpenCV(int cameraId)
 {
     cv::VideoCapture temp(cameraId);
-    video = temp;
-    video.set(CV_CAP_PROP_FRAME_WIDTH, CAMERA_DEFAULT_RES_WIDTH);
-    video.set(CV_CAP_PROP_FRAME_HEIGHT, CAMERA_DEFAULT_RES_HEIGHT);
-    video.set(CV_CAP_PROP_FPS, CAMERA_DEFAULT_FPS);
+    cvvideo = temp;
+    cvvideo.set(CV_CAP_PROP_FRAME_WIDTH, CAMERA_DEFAULT_RES_WIDTH);
+    cvvideo.set(CV_CAP_PROP_FRAME_HEIGHT, CAMERA_DEFAULT_RES_HEIGHT);
+    cvvideo.set(CV_CAP_PROP_FPS, CAMERA_DEFAULT_FPS);
 }
-#endif
 
 void Camera::DeinitialiseVideo()
 {
-    //close(f_desw);
-    avcodec_close(video.pCodecCtx);
-    av_free(video.pFrame);
-    av_free(video.pFrameRGB);
+    switch(videoMode) {
+        case CAMERA_MODE_FFMPEG:
+            //close(f_desw);
+            avcodec_close(video.pCodecCtx);
+            av_free(video.pFrame);
+            av_free(video.pFrameRGB);
+            avformat_close_input(&video.pFormatCtx);
+            break;
+        case CAMERA_MODE_OPENCV:
+            break;
+    }
 
-    avformat_close_input(&video.pFormatCtx);
 }
 
 void Camera::InitialiseAudio(int audioId)
@@ -138,7 +158,7 @@ void Camera::InitialiseAudio(int audioId)
                 &audio,
                 &inputParameters,
                 NULL,
-                GetHighestAudioSampleRate(&inputParameters, NULL),
+                GetFirstAudioSampleRate(&inputParameters, NULL),
                 FRAMES_PER_BUFFER,
                 paClipOff,
                 NULL,
@@ -147,70 +167,55 @@ void Camera::InitialiseAudio(int audioId)
         qDebug() << "Error: Audio Device " << audioId << "failed to open.";
 }
 
-double Camera::GetHighestAudioSampleRate(
-        const PaStreamParameters *inputParameters,
-        const PaStreamParameters *outputParameters)
+void Camera::FlushBuffers(void)
 {
-    static double standardSampleRates[] = {
-        8000.0, 16000.0, 44100.0, 48000.0, -1 /* negative terminated  list */
-    };
-    int i;
-    double highestSampleRate = 0.0;
-    PaError err;
+    if(CAMERA_MODE_FFMPEG == videoMode)
+        avcodec_flush_buffers(video.pCodecCtx);
+}
 
-    for( i=0; standardSampleRates[i] > 0; i++ )
+/***
+ * Get Highest Audio Sample Rate
+ * Author: Matthew Ribbins, PortAudio
+ * Description: Get the higiest audio sample rate
+ */
+double Camera::GetHighestAudioSampleRate(const PaStreamParameters *inputParameters, const PaStreamParameters *outputParameters)
+{
+    /*static double sampleRates[] = { 8000.0, 9600.0, 11025.0, 12000.0, 16000.0, 22050.0, 24000.0, 32000.0, 44100.0, 48000.0, 88200.0, 96000.0, 192000.0, -1};*/
+    static double sampleRates[] = { 8000.0, 16000.0, 44100.0, 48000.0, -1 };
+    double highestSampleRate = 0.0;
+    PaError error;
+
+    for(int i = 0; sampleRates[i] > 0; i++)
     {
-        qDebug() << "Device querying rate " << standardSampleRates[i];
-        err = Pa_IsFormatSupported( inputParameters, outputParameters, standardSampleRates[i] );
-        if( err == paFormatIsSupported )
-        {
-            qDebug() << ">> Supported";
-            highestSampleRate = standardSampleRates[i];
+        //qDebug() << "Device querying rate " << standardSampleRates[i];
+        error = Pa_IsFormatSupported(inputParameters, outputParameters, sampleRates[i]);
+        if(error == paFormatIsSupported) {
+            qDebug() << sampleRates[i] << "kHz Supported";
+            highestSampleRate = sampleRates[i];
         }
     }
-    if( !highestSampleRate )
-      qDebug() << ( "No suitable sample rate detected. Something's pear shaped here..." );
+    if(!highestSampleRate) qDebug() << ( "No suitable sample rate detected. Something's pear shaped here..." );
 
     return highestSampleRate;
 }
 
-
-void Camera::PrintSupportedStandardSampleRates(
-        const PaStreamParameters *inputParameters,
-        const PaStreamParameters *outputParameters )
+/***
+ * Get First Audio Sample Rate
+ * Author: Matthew Ribbins
+ * Description: Get the higiest audio sample rate
+ */
+double Camera::GetFirstAudioSampleRate(const PaStreamParameters *inputParameters, const PaStreamParameters *outputParameters)
 {
-    static double standardSampleRates[] = {
-        8000.0, 9600.0, 11025.0, 12000.0, 16000.0, 22050.0, 24000.0, 32000.0,
-        44100.0, 48000.0, 88200.0, 96000.0, 192000.0, -1 /* negative terminated  list */
-    };
-    int     i, printCount;
-    PaError err;
+    static double sampleRates[] = { 8000.0, 16000.0, 44100.0, 48000.0, -1 };
+    PaError error;
 
-    printCount = 0;
-    for( i=0; standardSampleRates[i] > 0; i++ )
-    {
-        err = Pa_IsFormatSupported( inputParameters, outputParameters, standardSampleRates[i] );
-        if( err == paFormatIsSupported )
-        {
-            if( printCount == 0 )
-            {
-                qDebug() << ( "\t%8.2f", standardSampleRates[i] );
-                printCount = 1;
-            }
-            else if( printCount == 4 )
-            {
-                qDebug() << ( ",\n\t%8.2f", standardSampleRates[i] );
-                printCount = 1;
-            }
-            else
-            {
-                qDebug() << ( ", %8.2f", standardSampleRates[i] );
-                ++printCount;
-         }
+    for(int i = 0; sampleRates[i] > 0; i++) {
+        error = Pa_IsFormatSupported(inputParameters, outputParameters, sampleRates[i]);
+        if(error == paFormatIsSupported) {
+            return sampleRates[i];
         }
     }
-    if( !printCount )
-      qDebug() << ( "None\n" );
+    return 0.0;
 }
 
 
@@ -248,7 +253,6 @@ QPixmap Camera::AVPictureToPixmap(int height, int width, void* data)
     return QPixmap::fromImage(tempImage);
 }
 
-
 /***
  * Get Audio Level from Device
  * Author: Matthew Ribbins
@@ -278,21 +282,31 @@ int Camera::GetAudioLevelFromDevice()
 
     Pa_StopStream(audio);
 
+    volume += audioGain;
+
     return volume;
 }
 
 /***
- * Get Frame
+ * Get Video Frame
  * Author: Matthew Ribbins
  */
 QPixmap Camera::GetVideoFrame(void)
+{
+    switch(videoMode) {
+        case CAMERA_MODE_FFMPEG:
+            return GetVideoFrameFFmpeg();
+        case CAMERA_MODE_OPENCV:
+            return GetVideoFrameOpenCV();
+    }
+}
+
+QPixmap Camera::GetVideoFrameFFmpeg(void)
 {
     QPixmap convertedFrame;
     AVPacket packet;
     int res;
     int frameFinished;
-
-    avcodec_flush_buffers(video.pCodecCtx);
 
     if((res = av_read_frame(video.pFormatCtx, &packet)) >= 0) {
         if(packet.stream_index == video.videoStream) {
@@ -324,6 +338,7 @@ QPixmap Camera::GetVideoFrame(void)
                 //cv::Mat frame(video.pFrame->height,video.pFrame->width,CV_8UC3,video.pFrameRGB->data[0]);
                 //if(!frame.empty())
                 //    convertedFrame = MatToPixmap(frame);
+                SaveStoredFrame(cv::Mat(video.pFrame->height, video.pFrame->width, CV_8UC3, video.pFrameRGB->data[0]));
 
                 av_free_packet(&packet);
                 sws_freeContext(img_convert_ctx);
@@ -331,20 +346,66 @@ QPixmap Camera::GetVideoFrame(void)
             }
         }
     }
-
-    // Get the frame OpenCV
-    //video >> frame;
-    //if(!frame.empty())
-    //    convertedFrame = MatToPixmap(frame);
     return convertedFrame;
 }
 
+QPixmap Camera::GetVideoFrameOpenCV(void) {
+    cv::Mat frame;
+    QPixmap convertedFrame;
+
+
+    // Get the frame, convert
+    cvvideo >> frame;
+    if(!frame.empty()) {
+        SaveStoredFrame(frame);
+        convertedFrame = MatToPixmap(frame);
+    }
+    return convertedFrame;
+}
+
+void Camera::SaveStoredFrame(cv::Mat frame)
+{
+    // Gray image
+    cvtColor(frame, frame, CV_RGB2GRAY);
+    // Let's do a shuffle
+    storedFrames[2] = storedFrames[1];
+    storedFrames[1] = storedFrames[0];
+    storedFrames[0] = frame;
+}
+
+int Camera::GetMovementDetection()
+{
+    cv::Mat diff1, diff2, motion;
+    int number_of_changes = 0;
+
+    // Avoid OpenCV assert by trying to work with zero
+    if(storedFrames[2].cols == 0) {
+        qDebug() << "Camera has not got three stored frames!";
+        return 0;
+    }
+    absdiff(storedFrames[0], storedFrames[2], diff1);
+    absdiff(storedFrames[2], storedFrames[1], diff2);
+    bitwise_and(diff1, diff2, motion);
+    threshold(motion, motion, 32, 255, CV_THRESH_BINARY);
+    for(int i = 0; i < diff1.rows; i+=2){ // height
+        for(int j = 0; j < diff1.cols; j+=2){ // width
+            if(motion.at<int>(i,j) == 255) {
+                number_of_changes++;
+            }
+        }
+    }
+    return number_of_changes;
+}
+
 /***
- * Set Audio Gain
+ * Set/Get Audio Gain
  * Author: Matthew Ribbins
- * Description: Set gain for audio device
  */
-void Camera::SetAudioGain(float gain)
+void Camera::SetAudioGain(double gain)
 {
     this->audioGain = gain;
+}
+double Camera::GetAudioGain()
+{
+    return this->audioGain;
 }

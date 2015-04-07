@@ -1,7 +1,6 @@
 #ifndef CAMERA_H
 #define CAMERA_H
 
-
 #include <opencv2/opencv.hpp>
 #include <portaudiocpp/PortAudioCpp.hxx>
 
@@ -19,15 +18,16 @@ extern "C" {
 
 #include "radioviz.h"
 
+#define CAMERA_MODE_FFMPEG 0
+#define CAMERA_MODE_OPENCV 1
+
 typedef struct _FFmpegDevice {
     AVCodecContext *pCodecCtx;
     AVFormatContext *pFormatCtx;
     AVCodec *pCodec;
-    AVInputFormat *iformat;
     AVFrame *pFrame;
     AVFrame *pFrameRGB;
     AVDeviceInfoList *pDeviceList;
-    AVPixelFormat pFormat;
     int videoStream;
 
 } FFmpegDevice;
@@ -39,27 +39,40 @@ public:
     Camera(int cameraId, int audioId);
     ~Camera();
     QPixmap GetVideoFrame(void);
+    QPixmap GetVideoFrameOpenCV(void);
+    QPixmap GetVideoFrameFFmpeg(void);
     int GetAudioLevelFromDevice(void);
-    void SetAudioGain(float gain);
+    void FlushBuffers(void);
 
-
+    double GetAudioGain();
+    void SetAudioGain(double gain);
+    int GetMovementDetection();
 
 private:
-    //cv::VideoCapture video;
+    cv::VideoCapture cvvideo;
     FFmpegDevice video;
+    int videoMode;
     PaStream *audio;
     float audioGain;
     bool isActive;
     Camera *parentCamera;
+    cv::Mat storedFrames[3];
 
 protected:
     void DebugFFmpegError(int errno);
-    bool IsVideoValid(void);
     void InitialiseVideo(int cameraId);
+    void InitialiseVideoFFmpeg(int cameraId);
+    void InitialiseVideoOpenCV(int cameraId);
     void DeinitialiseVideo();
+    bool IsVideoValid(void);
+
     void InitialiseAudio(int audioId);
     double GetHighestAudioSampleRate(const PaStreamParameters *inputParameters, const PaStreamParameters *outputParameters);
+    double GetFirstAudioSampleRate(const PaStreamParameters *inputParameters, const PaStreamParameters *outputParameters);
     void PrintSupportedStandardSampleRates(const PaStreamParameters *inputParameters, const PaStreamParameters *outputParameters);
+
+    void SaveStoredFrame(cv::Mat frame);
+
     QPixmap MatToPixmap(cv::Mat matImage);
     QPixmap AVPictureToPixmap(int height, int width, void* data);
 
