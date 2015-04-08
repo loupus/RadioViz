@@ -28,7 +28,7 @@ typedef struct _FFmpegDevice {
     AVFrame *pFrame;
     AVFrame *pFrameRGB;
     AVDeviceInfoList *pDeviceList;
-    int videoStream;
+    int streamId;
 
 } FFmpegDevice;
 

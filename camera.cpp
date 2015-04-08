@@ -23,12 +23,23 @@ Camera::~Camera()
     DeinitialiseVideo();
 }
 
+/***
+ * FFmpeg Debug Print
+ * Author: Matthew Ribbins
+ * Description: Easily print FFmpeg errors to the Qt debug console
+ */
 void Camera::DebugFFmpegError(int errno)
 {
     char msg[AV_ERROR_MAX_STRING_SIZE];
     av_make_error_string(&msg[0], AV_ERROR_MAX_STRING_SIZE, errno);
     qDebug() << "Error:" << msg;
 }
+
+/***
+ * Initialise Video
+ * Author: Matthew Ribbins
+ * Description: Initialise video, depending on the library defined in videoMode
+ */
 void Camera::InitialiseVideo(int cameraId)
 {
     switch(videoMode) {
@@ -42,14 +53,15 @@ void Camera::InitialiseVideo(int cameraId)
 }
 
 /***
- * Initialise Camera (FFmpeg)
+ * Initialise Video (FFmpeg)
  * Author: Matthew Ribbins
  * Description:
+ *
+ * Attribution: Code from http://hasanaga.info/how-to-capture-frame-from-webcam-witg-ffmpeg-api-and-display-image-with-opencv/
+ * was used to assist with understanding and implementing this FFmpeg implementation.
  */
 void Camera::InitialiseVideoFFmpeg(int cameraId)
 {
-    char filenameSrc[12];
-    int result = 0;
     int numBytes;
     uint8_t *buffer;
 
@@ -58,63 +70,46 @@ void Camera::InitialiseVideoFFmpeg(int cameraId)
     video.pFormatCtx = avformat_alloc_context();
     video.pFormatCtx->video_codec_id = AV_CODEC_ID_MJPEG;
     video.pFormatCtx->iformat = av_find_input_format("video4linux2");
-    //video.pFormatCtx->iformat->codec_tag = (const AVCodecTag* const*) avcodec_find_decoder(AV_CODEC_ID_MJPEG);
-    //video.pDeviceList;// = (AVDeviceInfoList *) malloc(sizeof(AVDeviceInfoList));
-    video.videoStream = 0;
+    video.streamId = -1;
 
 
-    sprintf(filenameSrc, "/dev/video%d", cameraId);
     sprintf(video.pFormatCtx->filename, "/dev/video%d", cameraId);
-    qDebug() << "Initialising " << filenameSrc << ".";
+    qDebug() << "Initialising " << video.pFormatCtx->filename << ".";
 
-    //result = avdevice_list_devices(video.pFormatCtx, &video.pDeviceList);
-    result = avdevice_list_input_sources(video.pFormatCtx->iformat, NULL, NULL, &video.pDeviceList);
+    avdevice_list_input_sources(video.pFormatCtx->iformat, NULL, NULL, &video.pDeviceList);
 
+    if(avformat_open_input(&video.pFormatCtx, video.pFormatCtx->filename, NULL, NULL) != 0) return;
+    if(avformat_find_stream_info(video.pFormatCtx, NULL) < 0) return;
 
-    if(avformat_open_input(&video.pFormatCtx, filenameSrc, NULL, NULL) != 0)
-        return;
+    av_dump_format(video.pFormatCtx, 0, video.pFormatCtx->filename, 0); // Debug dump
 
-    if(avformat_find_stream_info(video.pFormatCtx, NULL) < 0)
-        return;
-    av_dump_format(video.pFormatCtx, 0, filenameSrc, 0);
-
+    // Find a valid video stream
     for(unsigned int i=0; i < video.pFormatCtx->nb_streams; i++) {
         if(video.pFormatCtx->streams[i]->codec->coder_type==AVMEDIA_TYPE_VIDEO) {
-            video.videoStream = i;
+            video.streamId = i;
             break;
         }
     }
-    if(video.videoStream == -1)
-        return; // Videostream not found
-    video.pCodecCtx = video.pFormatCtx->streams[video.videoStream]->codec;
+    if(!video.streamId) return; // No valid video stream found. This was pointless.
 
-
-    if(av_find_best_stream(video.pFormatCtx, AVMEDIA_TYPE_VIDEO, -1, -1, &video.pCodec, 0) < 0)
-        return;
-
-    //video.pCodec = avcodec_find_decoder(video.pCodecCtx->codec_id);
-    //if(video.pCodec == NULL)
-        //return; // Codec not found
+    video.pCodecCtx = video.pFormatCtx->streams[video.streamId]->codec;
+    if(av_find_best_stream(video.pFormatCtx, AVMEDIA_TYPE_VIDEO, -1, -1, &video.pCodec, 0) < 0) return;
 
     //avcodec_set_dimensions(video.pCodecCtx, 1280, 720);
 
-
-    if(avcodec_open2(video.pCodecCtx, video.pCodec, NULL) < 0)
-        return; // Unable to open
+    if(avcodec_open2(video.pCodecCtx, video.pCodec, NULL) < 0) return;
 
     video.pFrame = av_frame_alloc();
     video.pFrameRGB = av_frame_alloc();
 
-    //video.pFormat = AV_PIX_FMT_BGR24; //AV_PIX_FMT_YUV422P; //
     video.pCodecCtx->pix_fmt = AV_PIX_FMT_RGB24;
     numBytes = avpicture_get_size(video.pCodecCtx->pix_fmt, video.pCodecCtx->width, video.pCodecCtx->height);
     buffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
     avpicture_fill((AVPicture *) video.pFrameRGB, buffer, video.pCodecCtx->pix_fmt, video.pCodecCtx->width, video.pCodecCtx->height);
-
 }
 
 /***
- * Initialise Camera (OpenCV)
+ * Initialise Video (OpenCV)
  * Author: Matthew Ribbins
  * Description:
  */
@@ -127,6 +122,11 @@ void Camera::InitialiseVideoOpenCV(int cameraId)
     cvvideo.set(CV_CAP_PROP_FPS, CAMERA_DEFAULT_FPS);
 }
 
+/***
+ * Deinitialise Video
+ * Author: Matthew Ribbins
+ * Description: Because I don't want a memory leak
+ */
 void Camera::DeinitialiseVideo()
 {
     switch(videoMode) {
@@ -143,6 +143,11 @@ void Camera::DeinitialiseVideo()
 
 }
 
+/***
+ * Initialise Audio (PortAudio)
+ * Author: Matthew Ribbins
+ * Description: Because I don't want a memory leak
+ */
 void Camera::InitialiseAudio(int audioId)
 {
     PaStreamParameters inputParameters;
@@ -154,19 +159,16 @@ void Camera::InitialiseAudio(int audioId)
     inputParameters.suggestedLatency = Pa_GetDeviceInfo(inputParameters.device)->defaultHighInputLatency;
     inputParameters.hostApiSpecificStreamInfo = NULL;
 
-    err = Pa_OpenStream(
-                &audio,
-                &inputParameters,
-                NULL,
-                GetFirstAudioSampleRate(&inputParameters, NULL),
-                FRAMES_PER_BUFFER,
-                paClipOff,
-                NULL,
-                NULL);
+    err = Pa_OpenStream(&audio, &inputParameters, NULL, GetFirstAudioSampleRate(&inputParameters, NULL), FRAMES_PER_BUFFER, paClipOff, NULL, NULL);
     if(err != paNoError)
         qDebug() << "Error: Audio Device " << audioId << "failed to open.";
 }
 
+/***
+ * Flush FFmpeg Video Buffer
+ * Author: Matthew Ribbins
+ * Description:
+ */
 void Camera::FlushBuffers(void)
 {
     if(CAMERA_MODE_FFMPEG == videoMode)
@@ -293,14 +295,25 @@ int Camera::GetAudioLevelFromDevice()
  */
 QPixmap Camera::GetVideoFrame(void)
 {
+    QPixmap frame;
     switch(videoMode) {
         case CAMERA_MODE_FFMPEG:
-            return GetVideoFrameFFmpeg();
+            frame = GetVideoFrameFFmpeg();
+            break;
         case CAMERA_MODE_OPENCV:
-            return GetVideoFrameOpenCV();
+            frame = GetVideoFrameOpenCV();
+            break;
     }
+    return frame;
 }
 
+/***
+ * Get video frame with FFMpeg library
+ * Author: Matthew Ribbins
+ *
+ * Attribution: Code from http://hasanaga.info/how-to-capture-frame-from-webcam-witg-ffmpeg-api-and-display-image-with-opencv/
+ * was used to assist with understanding and implementing this FFmpeg implementation.
+ */
 QPixmap Camera::GetVideoFrameFFmpeg(void)
 {
     QPixmap convertedFrame;
@@ -309,39 +322,28 @@ QPixmap Camera::GetVideoFrameFFmpeg(void)
     int frameFinished;
 
     if((res = av_read_frame(video.pFormatCtx, &packet)) >= 0) {
-        if(packet.stream_index == video.videoStream) {
+        if(packet.stream_index == video.streamId) {
             // Decode
             avcodec_decode_video2(video.pCodecCtx, video.pFrame, &frameFinished, &packet);
 
             // Fix deprecation errors
             switch (video.pCodecCtx->pix_fmt) {
-                case AV_PIX_FMT_YUVJ420P :
-                    video.pCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
-                    break;
-                case AV_PIX_FMT_YUVJ422P  :
-                    video.pCodecCtx->pix_fmt = AV_PIX_FMT_YUV422P;
-                    break;
-                case AV_PIX_FMT_YUVJ444P   :
-                    video.pCodecCtx->pix_fmt = AV_PIX_FMT_YUV444P;
-                    break;
-                case AV_PIX_FMT_YUVJ440P :
-                    video.pCodecCtx->pix_fmt = AV_PIX_FMT_YUV440P;
-                default:
-                    break;
+                case AV_PIX_FMT_YUVJ420P: video.pCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P; break;
+                case AV_PIX_FMT_YUVJ422P: video.pCodecCtx->pix_fmt = AV_PIX_FMT_YUV422P; break;
+                case AV_PIX_FMT_YUVJ444P: video.pCodecCtx->pix_fmt = AV_PIX_FMT_YUV444P; break;
+                case AV_PIX_FMT_YUVJ440P: video.pCodecCtx->pix_fmt = AV_PIX_FMT_YUV440P; break;
+                default: break;
             }
 
             if(frameFinished) {
-                struct SwsContext *img_convert_ctx;
-                img_convert_ctx = sws_getCachedContext(NULL, video.pCodecCtx->width, video.pCodecCtx->height, video.pCodecCtx->pix_fmt, video.pCodecCtx->width, video.pCodecCtx->height, AV_PIX_FMT_RGB24, SWS_BICUBIC, NULL, NULL, NULL);
-                sws_scale(img_convert_ctx, ((AVPicture*)video.pFrame)->data, ((AVPicture*)video.pFrame)->linesize, 0, video.pCodecCtx->height, ((AVPicture *)video.pFrameRGB)->data, ((AVPicture *)video.pFrameRGB)->linesize);
+                struct SwsContext *imgConvertCtx;
+                imgConvertCtx = sws_getCachedContext(NULL, video.pCodecCtx->width, video.pCodecCtx->height, video.pCodecCtx->pix_fmt, video.pCodecCtx->width, video.pCodecCtx->height, AV_PIX_FMT_RGB24, SWS_BILINEAR, NULL, NULL, NULL);
+                sws_scale(imgConvertCtx, ((AVPicture*)video.pFrame)->data, ((AVPicture*)video.pFrame)->linesize, 0, video.pCodecCtx->height, ((AVPicture *)video.pFrameRGB)->data, ((AVPicture *)video.pFrameRGB)->linesize);
                 convertedFrame = AVPictureToPixmap(video.pFrame->height, video.pFrame->width, video.pFrameRGB->data[0]);
-                //cv::Mat frame(video.pFrame->height,video.pFrame->width,CV_8UC3,video.pFrameRGB->data[0]);
-                //if(!frame.empty())
-                //    convertedFrame = MatToPixmap(frame);
                 SaveStoredFrame(cv::Mat(video.pFrame->height, video.pFrame->width, CV_8UC3, video.pFrameRGB->data[0]));
 
                 av_free_packet(&packet);
-                sws_freeContext(img_convert_ctx);
+                sws_freeContext(imgConvertCtx);
 
             }
         }
@@ -349,6 +351,11 @@ QPixmap Camera::GetVideoFrameFFmpeg(void)
     return convertedFrame;
 }
 
+/***
+ * Get video frame with OpenCV library
+ * Author: Matthew Ribbins
+ * Description:
+ */
 QPixmap Camera::GetVideoFrameOpenCV(void) {
     cv::Mat frame;
     QPixmap convertedFrame;
@@ -363,6 +370,11 @@ QPixmap Camera::GetVideoFrameOpenCV(void) {
     return convertedFrame;
 }
 
+/***
+ * Save stored frames
+ * Author: Matthew Ribbins
+ * Description: Store frames so we can use for motion detection
+ */
 void Camera::SaveStoredFrame(cv::Mat frame)
 {
     // Gray image
@@ -373,6 +385,12 @@ void Camera::SaveStoredFrame(cv::Mat frame)
     storedFrames[0] = frame;
 }
 
+/***
+ * Get motion detection value
+ * Author: Matthew Ribbins
+ * Description: By looking at the last three captured frames, we will determine how much change there
+ * has been betwen images. Movement
+ */
 int Camera::GetMovementDetection()
 {
     cv::Mat diff1, diff2, motion;
@@ -383,12 +401,19 @@ int Camera::GetMovementDetection()
         qDebug() << "Camera has not got three stored frames!";
         return 0;
     }
+    // Compare images with each other
     absdiff(storedFrames[0], storedFrames[2], diff1);
     absdiff(storedFrames[2], storedFrames[1], diff2);
+
+    // Combine diff frames, we get an image highlighting motion
     bitwise_and(diff1, diff2, motion);
+
+    // Set a threshold
     threshold(motion, motion, 32, 255, CV_THRESH_BINARY);
-    for(int i = 0; i < diff1.rows; i+=2){ // height
-        for(int j = 0; j < diff1.cols; j+=2){ // width
+
+    // Let's do some counting.
+    for(int i = 0; i < diff1.rows; i+=2) {
+        for(int j = 0; j < diff1.cols; j+=2) {
             if(motion.at<int>(i,j) == 255) {
                 number_of_changes++;
             }
