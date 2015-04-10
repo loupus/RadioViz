@@ -41,6 +41,7 @@ public:
     QPixmap GetVideoFrame(void);
     QPixmap GetVideoFrameOpenCV(void);
     QPixmap GetVideoFrameFFmpeg(void);
+    QPixmap GetProcessedFrame(int frameId);
     int GetAudioLevelFromDevice(void);
     void FlushBuffers(void);
 
@@ -57,6 +58,7 @@ private:
     bool isActive;
     Camera *parentCamera;
     cv::Mat storedFrames[3];
+    cv::Mat processedFrames[3];
 
 protected:
     void DebugFFmpegError(int errno);
@@ -74,6 +76,8 @@ protected:
     void SaveStoredFrame(cv::Mat frame);
 
     QPixmap MatToPixmap(cv::Mat matImage);
+    QPixmap MatToPixmapGray(cv::Mat matImage);
+
     QPixmap AVPictureToPixmap(int height, int width, void* data);
 
 };

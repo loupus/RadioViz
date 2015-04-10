@@ -208,6 +208,10 @@ void MainWindow::SelectCameraBasedOnVideo()
         } else {
             qDebug() << "Camera " << highestActive << " active";
             ChangeCamera(highestActive);
+            //for(int i = 0; i < 2; i++) {
+            //    cameraWidget->putFrame(camera[highestActive]->GetProcessedFrame(i));
+            //    cameraWidget->repaint();
+            //}
         }
     }
     qDebug() << "----";

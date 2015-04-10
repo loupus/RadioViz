@@ -240,6 +240,19 @@ QPixmap Camera::MatToPixmap(cv::Mat matImage) {
     return QPixmap::fromImage(tempImage);
 }
 
+QPixmap Camera::MatToPixmapGray(cv::Mat matImage) {
+    cv::Mat tempMat = matImage;
+
+    cv:cvtColor(matImage, tempMat, CV_GRAY2RGB);
+
+    // Convert to QImage
+    // QImage(uchar *data, int width, int height, Format format);
+    QImage tempImage((uchar*)tempMat.data, tempMat.cols, tempMat.rows, QImage::Format_RGB888);
+
+    // Return as QPixmap
+    return QPixmap::fromImage(tempImage);
+}
+
 /***
  * Convert AVPicture to QPixmap
  * Author: Matthew Ribbins
@@ -393,33 +406,41 @@ void Camera::SaveStoredFrame(cv::Mat frame)
  */
 int Camera::GetMovementDetection()
 {
-    cv::Mat diff1, diff2, motion;
-    int number_of_changes = 0;
+    cv::Mat diff, motion;
+    int numChangedPixels = 0;
 
     // Avoid OpenCV assert by trying to work with zero
     if(storedFrames[2].cols == 0) {
         qDebug() << "Camera has not got three stored frames!";
         return 0;
     }
-    // Compare images with each other
-    absdiff(storedFrames[0], storedFrames[2], diff1);
-    absdiff(storedFrames[2], storedFrames[1], diff2);
 
-    // Combine diff frames, we get an image highlighting motion
-    bitwise_and(diff1, diff2, motion);
+    absdiff(storedFrames[2], storedFrames[0], diff);
 
-    // Set a threshold
-    threshold(motion, motion, 32, 255, CV_THRESH_BINARY);
+    // Set a threshold, define background and foreground objects
+    threshold(diff1, motion, MOTION_DETECTION_PIXEL_THRESHOLD, MOTION_DETECTION_PIXEL_MAX, CV_THRESH_BINARY);
 
     // Let's do some counting.
-    for(int i = 0; i < diff1.rows; i+=2) {
-        for(int j = 0; j < diff1.cols; j+=2) {
+    for(int i = 0; i < motion.rows; i+=2) {
+        for(int j = 0; j < motion.cols; j+=2) {
             if(motion.at<int>(i,j) == 255) {
-                number_of_changes++;
+                numChangedPixels++;
             }
         }
     }
-    return number_of_changes;
+
+    // Save for debug purposes
+    processedFrames[0] = diff;
+    processedFrames[1] = motion;
+    return numChangedPixels;
+}
+
+QPixmap Camera::GetProcessedFrame(int frameId)
+{
+    QPixmap convertedFrame;
+    if(frameId > 2) return convertedFrame;
+    convertedFrame = MatToPixmapGray(processedFrames[frameId]);
+    return convertedFrame;
 }
 
 /***
