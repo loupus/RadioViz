@@ -401,13 +401,17 @@ void Camera::SaveStoredFrame(cv::Mat frame)
 /***
  * Get motion detection value
  * Author: Matthew Ribbins
- * Description: By looking at the last three captured frames, we will determine how much change there
- * has been betwen images. Movement
+ * Description: By looking at the last two captured frames, we will determine how much change there
+ * has been betwen images. 
+ *
+ * Return: (int) Amount of change x/1000
  */
 int Camera::GetMovementDetection()
 {
     cv::Mat diff, motion;
     int numChangedPixels = 0;
+    int totalPixels = 0;
+    int pctChangedPixels = 0;
 
     // Avoid OpenCV assert by trying to work with zero
     if(storedFrames[2].cols == 0) {
@@ -418,21 +422,27 @@ int Camera::GetMovementDetection()
     absdiff(storedFrames[2], storedFrames[0], diff);
 
     // Set a threshold, define background and foreground objects
-    threshold(diff1, motion, MOTION_DETECTION_PIXEL_THRESHOLD, MOTION_DETECTION_PIXEL_MAX, CV_THRESH_BINARY);
+    threshold(diff, motion, MOTION_DETECTION_PIXEL_THRESHOLD, MOTION_DETECTION_PIXEL_MAX, CV_THRESH_BINARY);
 
     // Let's do some counting.
-    for(int i = 0; i < motion.rows; i+=2) {
-        for(int j = 0; j < motion.cols; j+=2) {
-            if(motion.at<int>(i,j) == 255) {
+    for(int i = 0; i < motion.rows; i += MOTION_DETECTION_JUMP) {
+        for(int j = 0; j < motion.cols; j += MOTION_DETECTION_JUMP) {
+            if(motion.at<int>(i,j) == MOTION_DETECTION_PIXEL_MAX) {
                 numChangedPixels++;
             }
         }
     }
 
+    // Return a pct change relative to how many pixels are on screen
+    totalPixels = motion.rows * motion.cols;
+    pctChangedPixels = floor(numChangedPixels / (totalPixels / pow(MOTION_DETECTION_JUMP,2)) * 1000);
+
+    qDebug() << "Camera has " << numChangedPixels << "/" << (totalPixels/4) << "=%" << pctChangedPixels;
+
     // Save for debug purposes
     processedFrames[0] = diff;
     processedFrames[1] = motion;
-    return numChangedPixels;
+    return pctChangedPixels;
 }
 
 QPixmap Camera::GetProcessedFrame(int frameId)

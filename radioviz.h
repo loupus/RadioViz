@@ -8,13 +8,13 @@
 #include "radioviz.h"
 
 // Maximum number of cameras available for use
-#define MAX_CAMERAS_AVAILABLE 10
+#define MAX_CAMERAS_AVAILABLE 5
 
 // Maximum number of audio devices for each camera device
 #define MAX_AUDIO_DEVICES_PER_CAMERA 2
 
 // Temporary PortAudio camera offset
-#define PORTAUDIO_TO_CAMERA_DEVICE_OFFSET 5
+#define PORTAUDIO_TO_CAMERA_DEVICE_OFFSET 2
 
 // PortAudio Defaults
 #define SAMPLE_RATE  (44100)
@@ -31,9 +31,13 @@
 #define CAMERA_DEFAULT_RES_HEIGHT 544
 #define CAMERA_DEFAULT_FPS 30
 
+#define MOTION_DETECTION_PIXEL_THRESHOLD 42
+#define MOTION_DETECTION_PIXEL_MAX 255
+#define MOTION_DETECTION_JUMP 2
+
 
 #define CAMERA_AUDIO_THRESHOLD (-20)
-#define CAMERA_MOVEMENT_THRESHOLD 300
+#define CAMERA_MOVEMENT_THRESHOLD 3
 
 // Switching Modes
 #define MODE_DISABLED 0
