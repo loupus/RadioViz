@@ -82,14 +82,16 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Settings
     for(int i=0; i < availableCameras; i++) {
-        QString settingKey(QString("Devices/").append(deviceList->devices[i]->device_description));
+        //For some reason there's a reversal
+        int ffmpegi = availableCameras - i - 1;
+        QString settingKey(QString("Devices/").append(deviceList->devices[ffmpegi]->device_description));
 
         int result = QString::compare(settings.value(QString(settingKey).append("/enabled")).toString(), "true", Qt::CaseInsensitive);
 
         if(!result) {
             // We have settings to load
-            qDebug() << "Load " << settingKey;
-            double gain = (settings.value(QString(settingKey).append("/gain"))).toDouble();
+            qDebug() << "Load " << settingKey << "to Camera " << ffmpegi;
+            float gain = (settings.value(QString(settingKey).append("/gain"))).toFloat();
             qDebug() << "Gain " << gain;
             camera[i]->SetAudioGain(gain);
 
@@ -115,7 +117,7 @@ MainWindow::MainWindow(QWidget *parent)
         camera[i]->FlushBuffers();
     }
 
-    startTimer(50); // 50 = 30fps
+    startTimer(40); // 30fps
  }
 
 /***
@@ -141,11 +143,11 @@ void MainWindow::SelectCameraBasedOnInput(int input)
  */
 void MainWindow::SelectCameraBasedOnAudio()
 {
-    int levels[availableCameras];
+    float levels[availableCameras];
     bool active[availableCameras];
     int activeCount = 0;
     int loudestCamera = 0;
-    float loudestCameraLevel = 0;
+    float loudestCameraLevel = -50;
     QString *debugString = new QString();
 
     memset((void *)&active, 0, sizeof(bool)*availableCameras);
@@ -154,6 +156,8 @@ void MainWindow::SelectCameraBasedOnAudio()
     for(int i = 0; i < availableCameras; i++) {
         levels[i] = camera[i]->GetAudioLevelFromDevice();
         debugString->append(QString("%1").arg(levels[i]));
+        qDebug() << "Camera " << i << ": " << levels[i];
+
         if(i == currentCamera)
             debugString->append(QString("*"));
         debugString->append(QString(" "));
@@ -172,6 +176,7 @@ void MainWindow::SelectCameraBasedOnAudio()
 
     if(activeCount) {
         if(activeCount > 2) {
+            qDebug() << "Two or more cameras loud.";
             ChangeCamera(loudestCamera);
         } else {
             ChangeCamera(loudestCamera);
@@ -179,6 +184,10 @@ void MainWindow::SelectCameraBasedOnAudio()
     }
 }
 
+/***
+ * Select suitable camera based on video
+ * Author: Matthew Ribbins
+ */
 void MainWindow::SelectCameraBasedOnVideo()
 {
     int movement[availableCameras];
@@ -215,6 +224,62 @@ void MainWindow::SelectCameraBasedOnVideo()
         }
     }
     qDebug() << "----";
+}
+
+/***
+ * Select suitable camera based on audio and video
+ * Author: Matthew Ribbins
+ */
+void MainWindow::SelectCameraBasedOnAudioVideo()
+{
+    float levels[availableCameras];
+    bool activeAudio[availableCameras];
+    int activeCount = 0;
+    int loudestCamera = 0;
+    float loudestCameraLevel = -50;
+
+    int movement[availableCameras];
+    bool activeVideo[availableCameras];
+    int numOfActive = 0;
+    int highestActive = -1;
+    int highestActiveLevel = 0;
+    QString *debugString = new QString();
+
+    memset((void *)&activeAudio, 0, sizeof(bool)*availableCameras);
+    memset((void *)&activeVideo, 0, sizeof(bool)*availableCameras);
+
+
+    // Get current values
+    for(int i = 0; i < availableCameras; i++) {
+        levels[i] = camera[i]->GetAudioLevelFromDevice();
+        movement[i] = camera[i]->GetMovementDetection();
+        debugString->append(QString("%1").arg(levels[i]));
+        qDebug() << "Camera " << i << ": " << levels[i];
+
+        if(i == currentCamera)
+            debugString->append(QString("*"));
+        debugString->append(QString(" "));
+
+        if(levels[i] > loudestCameraLevel) {
+            loudestCamera = i;
+            loudestCameraLevel = levels[i];
+        }
+
+        if(levels[i] > CAMERA_AUDIO_THRESHOLD) {
+            activeAudio[i] = true;
+            activeCount++;
+        }
+    }
+    debugLabel->setText(*debugString);
+
+    if(activeCount) {
+        if(activeCount > 2) {
+            qDebug() << "Two or more cameras loud.";
+            ChangeCamera(loudestCamera);
+        } else {
+            ChangeCamera(loudestCamera);
+        }
+    }
 }
 
 /***
@@ -329,6 +394,7 @@ void MainWindow::ChangeCamera(void)
 
 void MainWindow::ChangeCamera(int cameraToChange)
 {
+    qDebug() << "Chaning from " << currentCamera << " to " << cameraToChange;
     // Turn off the current camera to save USB bandwidth
     //camera[currentCamera].release();
 

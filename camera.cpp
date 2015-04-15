@@ -243,7 +243,7 @@ QPixmap Camera::MatToPixmap(cv::Mat matImage) {
 QPixmap Camera::MatToPixmapGray(cv::Mat matImage) {
     cv::Mat tempMat = matImage;
 
-    cv:cvtColor(matImage, tempMat, CV_GRAY2RGB);
+    cv::cvtColor(matImage, tempMat, CV_GRAY2RGB);
 
     // Convert to QImage
     // QImage(uchar *data, int width, int height, Format format);
@@ -272,12 +272,12 @@ QPixmap Camera::AVPictureToPixmap(int height, int width, void* data)
  * Get Audio Level from Device
  * Author: Matthew Ribbins
  */
-int Camera::GetAudioLevelFromDevice()
+float Camera::GetAudioLevelFromDevice()
 {
     PaError err;
     QString *debugString = new QString();
     float tempBuffer[FRAMES_PER_BUFFER];
-    int volume;
+    float volume;
 
     Pa_StartStream(audio);
 
@@ -297,6 +297,7 @@ int Camera::GetAudioLevelFromDevice()
 
     Pa_StopStream(audio);
 
+    qDebug() << volume << " += " << audioGain << " = " << (volume+audioGain);
     volume += audioGain;
 
     return volume;

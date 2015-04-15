@@ -42,7 +42,7 @@ public:
     QPixmap GetVideoFrameOpenCV(void);
     QPixmap GetVideoFrameFFmpeg(void);
     QPixmap GetProcessedFrame(int frameId);
-    int GetAudioLevelFromDevice(void);
+    float GetAudioLevelFromDevice(void);
     void FlushBuffers(void);
 
     double GetAudioGain();

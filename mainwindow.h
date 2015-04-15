@@ -51,6 +51,8 @@ protected:
     int GetAudioLevelFromDevice(int devNum);
     void SelectCameraBasedOnAudio();
     void SelectCameraBasedOnVideo();
+    void SelectCameraBasedOnAudioVideo();
+
     void SelectCameraBasedOnInput(int input);
 
 public slots:
